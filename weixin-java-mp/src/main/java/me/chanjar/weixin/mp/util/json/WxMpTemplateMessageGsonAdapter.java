@@ -1,11 +1,3 @@
-/*
- * KINGSTAR MEDIA SOLUTIONS Co.,LTD. Copyright c 2005-2013. All rights reserved.
- *
- * This source code is the property of KINGSTAR MEDIA SOLUTIONS LTD. It is intended
- * only for the use of KINGSTAR MEDIA application development. Reengineering, reproduction
- * arose from modification of the original source, or other redistribution of this source
- * is not permitted without written permission of the KINGSTAR MEDIA SOLUTIONS LTD.
- */
 package me.chanjar.weixin.mp.util.json;
 
 import com.google.gson.JsonElement;
@@ -14,9 +6,15 @@ import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
 import me.chanjar.weixin.mp.bean.template.WxMpTemplateData;
 import me.chanjar.weixin.mp.bean.template.WxMpTemplateMessage;
+import org.apache.commons.lang3.StringUtils;
 
 import java.lang.reflect.Type;
 
+
+/**
+ * 模板消息转Json类型转换器
+ * @author chanjarster
+ */
 public class WxMpTemplateMessageGsonAdapter implements JsonSerializer<WxMpTemplateMessage> {
 
   @Override
@@ -24,14 +22,22 @@ public class WxMpTemplateMessageGsonAdapter implements JsonSerializer<WxMpTempla
     JsonObject messageJson = new JsonObject();
     messageJson.addProperty("touser", message.getToUser());
     messageJson.addProperty("template_id", message.getTemplateId());
+    if (StringUtils.isNotBlank(message.getClientMsgId())) {
+      messageJson.addProperty("client_msg_id", message.getClientMsgId());
+    }
     if (message.getUrl() != null) {
       messageJson.addProperty("url", message.getUrl());
     }
 
-    if(message.getMiniProgram() !=null){
+    final WxMpTemplateMessage.MiniProgram miniProgram = message.getMiniProgram();
+    if (miniProgram != null) {
       JsonObject miniProgramJson = new JsonObject();
-      miniProgramJson.addProperty("appid", message.getMiniProgram().getAppid());
-      miniProgramJson.addProperty("pagepath", message.getMiniProgram().getPagePath());
+      miniProgramJson.addProperty("appid", miniProgram.getAppid());
+      if (miniProgram.isUsePath()) {
+        miniProgramJson.addProperty("path", miniProgram.getPagePath());
+      } else {
+        miniProgramJson.addProperty("pagepath", miniProgram.getPagePath());
+      }
       messageJson.add("miniprogram", miniProgramJson);
     }
 

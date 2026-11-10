@@ -1,27 +1,24 @@
 package me.chanjar.weixin.cp.api;
 
 import me.chanjar.weixin.common.bean.WxJsapiSignature;
-import me.chanjar.weixin.common.bean.menu.WxMenu;
-import me.chanjar.weixin.common.bean.result.WxMediaUploadResult;
-import me.chanjar.weixin.common.exception.WxErrorException;
+import me.chanjar.weixin.common.error.WxErrorException;
+import me.chanjar.weixin.common.service.WxService;
 import me.chanjar.weixin.common.session.WxSession;
 import me.chanjar.weixin.common.session.WxSessionManager;
+import me.chanjar.weixin.common.util.http.MediaUploadRequestExecutor;
 import me.chanjar.weixin.common.util.http.RequestExecutor;
-import me.chanjar.weixin.cp.bean.WxCpDepart;
-import me.chanjar.weixin.cp.bean.WxCpMessage;
-import me.chanjar.weixin.cp.bean.WxCpTag;
-import me.chanjar.weixin.cp.bean.WxCpUser;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.List;
+import me.chanjar.weixin.common.util.http.RequestHttp;
+import me.chanjar.weixin.cp.bean.WxCpAgentJsapiSignature;
+import me.chanjar.weixin.cp.bean.WxCpMaJsCode2SessionResult;
+import me.chanjar.weixin.cp.bean.WxCpProviderToken;
+import me.chanjar.weixin.cp.config.WxCpConfigStorage;
 
 /**
- * 微信API的Service
+ * 微信API的Service.
+ *
+ * @author chanjaster
  */
-public interface WxCpService {
-
+public interface WxCpService extends WxService {
   /**
    * <pre>
    * 验证推送过来的消息的正确性
@@ -32,23 +29,16 @@ public interface WxCpService {
    * @param timestamp    时间戳
    * @param nonce        随机数
    * @param data         微信传输过来的数据，有可能是echoStr，有可能是xml消息
+   * @return the boolean
    */
   boolean checkSignature(String msgSignature, String timestamp, String nonce, String data);
 
   /**
-   * <pre>
-   *   用在二次验证的时候
-   *   企业在员工验证成功后，调用本方法告诉企业号平台该员工关注成功。
-   * </pre>
-   *
-   * @param userId 用户id
-   */
-  void userAuthenticated(String userId) throws WxErrorException;
-
-  /**
    * 获取access_token, 不强制刷新access_token
    *
-   * @see #getAccessToken(boolean)
+   * @return the access token
+   * @throws WxErrorException the wx error exception
+   * @see #getAccessToken(boolean) #getAccessToken(boolean)#getAccessToken(boolean)#getAccessToken(boolean)
    */
   String getAccessToken() throws WxErrorException;
 
@@ -62,13 +52,43 @@ public interface WxCpService {
    * </pre>
    *
    * @param forceRefresh 强制刷新
+   * @return the access token
+   * @throws WxErrorException the wx error exception
    */
   String getAccessToken(boolean forceRefresh) throws WxErrorException;
 
   /**
+   * <pre>
+   * 获取通讯录同步access_token，本方法线程安全
+   * 通讯录同步相关接口仅支持通过"通讯录同步secret"调用，需要使用独立的access_token
+   * 详情请见: https://developer.work.weixin.qq.com/document/path/91579
+   * </pre>
+   *
+   * @param forceRefresh 强制刷新
+   * @return 通讯录同步专用的access token
+   * @throws WxErrorException the wx error exception
+   */
+  String getContactAccessToken(boolean forceRefresh) throws WxErrorException;
+
+  /**
+   * <pre>
+   * 获取会话存档access_token，本方法线程安全
+   * 会话存档相关接口需要使用会话存档secret获取单独的access_token
+   * 详情请见: https://developer.work.weixin.qq.com/document/path/91782
+   * </pre>
+   *
+   * @param forceRefresh 强制刷新
+   * @return 会话存档专用的access token
+   * @throws WxErrorException the wx error exception
+   */
+  String getMsgAuditAccessToken(boolean forceRefresh) throws WxErrorException;
+
+  /**
    * 获得jsapi_ticket,不强制刷新jsapi_ticket
    *
-   * @see #getJsapiTicket(boolean)
+   * @return the jsapi ticket
+   * @throws WxErrorException the wx error exception
+   * @see #getJsapiTicket(boolean) #getJsapiTicket(boolean)#getJsapiTicket(boolean)#getJsapiTicket(boolean)
    */
   String getJsapiTicket() throws WxErrorException;
 
@@ -81,8 +101,42 @@ public interface WxCpService {
    * </pre>
    *
    * @param forceRefresh 强制刷新
+   * @return the jsapi ticket
+   * @throws WxErrorException the wx error exception
    */
   String getJsapiTicket(boolean forceRefresh) throws WxErrorException;
+
+  /**
+   * 获得jsapi_ticket,不强制刷新jsapi_ticket
+   * 应用的jsapi_ticket用于计算agentConfig（参见“通过agentConfig注入应用的权限”）的签名，签名计算方法与上述介绍的config的签名算法完全相同，但需要注意以下区别：
+   * <p>
+   * 签名的jsapi_ticket必须使用以下接口获取。且必须用wx.agentConfig中的agentid对应的应用secret去获取access_token。
+   * 签名用的noncestr和timestamp必须与wx.agentConfig中的nonceStr和timestamp相同。
+   *
+   * @return the agent jsapi ticket
+   * @throws WxErrorException the wx error exception
+   * @see #getJsapiTicket(boolean) #getJsapiTicket(boolean)#getJsapiTicket(boolean)#getJsapiTicket(boolean)
+   */
+  String getAgentJsapiTicket() throws WxErrorException;
+
+  /**
+   * <pre>
+   * 获取应用的jsapi_ticket
+   * 应用的jsapi_ticket用于计算agentConfig（参见“通过agentConfig注入应用的权限”）的签名，签名计算方法与上述介绍的config的签名算法完全相同，但需要注意以下区别：
+   *
+   * 签名的jsapi_ticket必须使用以下接口获取。且必须用wx.agentConfig中的agentid对应的应用secret去获取access_token。
+   * 签名用的noncestr和timestamp必须与wx.agentConfig中的nonceStr和timestamp相同。
+   *
+   * 获得时会检查jsapiToken是否过期，如果过期了，那么就刷新一下，否则就什么都不干
+   *
+   * 详情请见：https://work.weixin.qq.com/api/doc#10029/%E8%8E%B7%E5%8F%96%E5%BA%94%E7%94%A8%E7%9A%84jsapi_ticket
+   * </pre>
+   *
+   * @param forceRefresh 强制刷新
+   * @return the agent jsapi ticket
+   * @throws WxErrorException the wx error exception
+   */
+  String getAgentJsapiTicket(boolean forceRefresh) throws WxErrorException;
 
   /**
    * <pre>
@@ -92,400 +146,135 @@ public interface WxCpService {
    * </pre>
    *
    * @param url url
+   * @return the wx jsapi signature
+   * @throws WxErrorException the wx error exception
    */
   WxJsapiSignature createJsapiSignature(String url) throws WxErrorException;
 
   /**
    * <pre>
-   * 上传多媒体文件
-   * 上传的多媒体文件有格式和大小限制，如下：
-   *   图片（image）: 1M，支持JPG格式
-   *   语音（voice）：2M，播放长度不超过60s，支持AMR\MP3格式
-   *   视频（video）：10MB，支持MP4格式
-   *   缩略图（thumb）：64KB，支持JPG格式
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=上传下载多媒体文件
+   *   创建调用wx.agentConfig时所需要的签名
+   *
+   * 详情请见：https://open.work.weixin.qq.com/api/doc/90000/90136/94313
    * </pre>
    *
-   * @param mediaType   媒体类型, 请看{@link me.chanjar.weixin.common.api.WxConsts}
-   * @param fileType    文件类型，请看{@link me.chanjar.weixin.common.api.WxConsts}
-   * @param inputStream 输入流
+   * @param url url
+   * @return the agent jsapi signature
+   * @throws WxErrorException the wx error exception
    */
-  WxMediaUploadResult mediaUpload(String mediaType, String fileType, InputStream inputStream)
-    throws WxErrorException, IOException;
+  WxCpAgentJsapiSignature createAgentJsapiSignature(String url) throws WxErrorException;
 
   /**
-   * @param mediaType 媒体类型
-   * @param file      文件对象
-   * @see #mediaUpload(String, String, InputStream)
+   * 小程序登录凭证校验
+   *
+   * @param jsCode 登录时获取的 code
+   * @return the wx cp ma js code 2 session result
+   * @throws WxErrorException the wx error exception
    */
-  WxMediaUploadResult mediaUpload(String mediaType, File file) throws WxErrorException;
+  WxCpMaJsCode2SessionResult jsCode2Session(String jsCode) throws WxErrorException;
 
   /**
    * <pre>
-   * 下载多媒体文件
-   * 根据微信文档，视频文件下载不了，会返回null
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=上传下载多媒体文件
-   * </pre>
-   *
-   * @param mediaId 媒体id
-   * @return 保存到本地的临时文件
-   */
-  File mediaDownload(String mediaId) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 发送消息
-   * 详情请见: http://qydev.weixin.qq.com/wiki/index.php?title=%E5%8F%91%E9%80%81%E6%8E%A5%E5%8F%A3%E8%AF%B4%E6%98%8E
-   * </pre>
-   *
-   * @param message 要发送的消息对象
-   */
-  void messageSend(WxCpMessage message) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 自定义菜单创建接口
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=自定义菜单创建接口
-   *
-   * 注意: 这个方法使用WxCpConfigStorage里的agentId
-   * </pre>
-   *
-   * @param menu 菜单对象
-   * @see #menuCreate(Integer, WxMenu)
-   */
-  void menuCreate(WxMenu menu) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 自定义菜单创建接口
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=自定义菜单创建接口
-   *
-   * 注意: 这个方法不使用WxCpConfigStorage里的agentId，需要开发人员自己给出
-   * </pre>
-   *
-   * @param agentId 企业号应用的id
-   * @param menu    菜单对象
-   * @see #menuCreate(me.chanjar.weixin.common.bean.menu.WxMenu)
-   */
-  void menuCreate(Integer agentId, WxMenu menu) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 自定义菜单删除接口
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=自定义菜单删除接口
-   *
-   * 注意: 这个方法使用WxCpConfigStorage里的agentId
-   * </pre>
-   *
-   * @see #menuDelete(Integer)
-   */
-  void menuDelete() throws WxErrorException;
-
-  /**
-   * <pre>
-   * 自定义菜单删除接口
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=自定义菜单删除接口
-   *
-   * 注意: 这个方法不使用WxCpConfigStorage里的agentId，需要开发人员自己给出
-   * </pre>
-   *
-   * @param agentId 企业号应用的id
-   * @see #menuDelete()
-   */
-  void menuDelete(Integer agentId) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 自定义菜单查询接口
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=自定义菜单查询接口
-   *
-   * 注意: 这个方法使用WxCpConfigStorage里的agentId
-   * </pre>
-   *
-   * @see #menuGet(Integer)
-   */
-  WxMenu menuGet() throws WxErrorException;
-
-  /**
-   * <pre>
-   * 自定义菜单查询接口
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=自定义菜单查询接口
-   *
-   * 注意: 这个方法不使用WxCpConfigStorage里的agentId，需要开发人员自己给出
-   * </pre>
-   *
-   * @param agentId 企业号应用的id
-   * @see #menuGet()
-   */
-  WxMenu menuGet(Integer agentId) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 部门管理接口 - 创建部门
-   * 最多支持创建500个部门
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=部门管理接口
-   * </pre>
-   *
-   * @param depart 部门
-   * @return 部门id
-   */
-  Integer departCreate(WxCpDepart depart) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 部门管理接口 - 查询所有部门
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=部门管理接口
-   * </pre>
-   */
-  List<WxCpDepart> departGet() throws WxErrorException;
-
-  /**
-   * <pre>
-   * 部门管理接口 - 修改部门名
-   * 详情请见: http://mp.weixin.qq.com/wiki/index.php?title=部门管理接口
-   * 如果id为0(未部门),1(黑名单),2(星标组)，或者不存在的id，微信会返回系统繁忙的错误
-   * </pre>
-   *
-   * @param group 要更新的group，group的id,name必须设置
-   */
-  void departUpdate(WxCpDepart group) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 部门管理接口 - 删除部门
-   * </pre>
-   *
-   * @param departId 部门id
-   */
-  void departDelete(Integer departId) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 获取部门成员(详情)
-   *
-   * http://qydev.weixin.qq.com/wiki/index.php?title=管理成员#.E8.8E.B7.E5.8F.96.E9.83.A8.E9.97.A8.E6.88.90.E5.91.98.28.E8.AF.A6.E6.83.85.29
-   * </pre>
-   *
-   * @param departId   必填。部门id
-   * @param fetchChild 非必填。1/0：是否递归获取子部门下面的成员
-   * @param status     非必填。0获取全部员工，1获取已关注成员列表，2获取禁用成员列表，4获取未关注成员列表。status可叠加
-   */
-  List<WxCpUser> userList(Integer departId, Boolean fetchChild, Integer status) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 获取部门成员
-   *
-   * http://qydev.weixin.qq.com/wiki/index.php?title=管理成员#.E8.8E.B7.E5.8F.96.E9.83.A8.E9.97.A8.E6.88.90.E5.91.98
-   * </pre>
-   *
-   * @param departId   必填。部门id
-   * @param fetchChild 非必填。1/0：是否递归获取子部门下面的成员
-   * @param status     非必填。0获取全部员工，1获取已关注成员列表，2获取禁用成员列表，4获取未关注成员列表。status可叠加
-   */
-  List<WxCpUser> departGetUsers(Integer departId, Boolean fetchChild, Integer status) throws WxErrorException;
-
-  /**
-   * 新建用户
-   *
-   * @param user 用户对象
-   */
-  void userCreate(WxCpUser user) throws WxErrorException;
-
-  /**
-   * 更新用户
-   *
-   * @param user 用户对象
-   */
-  void userUpdate(WxCpUser user) throws WxErrorException;
-
-  /**
-   * 删除用户
-   *
-   * @param userid 用户id
-   */
-  void userDelete(String userid) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 批量删除成员
-   * http://qydev.weixin.qq.com/wiki/index.php?title=管理成员#.E6.89.B9.E9.87.8F.E5.88.A0.E9.99.A4.E6.88.90.E5.91.98
-   * </pre>
-   *
-   * @param userids 员工UserID列表。对应管理端的帐号
-   */
-  void userDelete(String[] userids) throws WxErrorException;
-
-  /**
-   * 获取用户
-   *
-   * @param userid 用户id
-   */
-  WxCpUser userGet(String userid) throws WxErrorException;
-
-  /**
-   * 创建标签
-   *
-   * @param tagName 标签名
-   */
-  String tagCreate(String tagName) throws WxErrorException;
-
-  /**
-   * 更新标签
-   *
-   * @param tagId   标签id
-   * @param tagName 标签名
-   */
-  void tagUpdate(String tagId, String tagName) throws WxErrorException;
-
-  /**
-   * 删除标签
-   *
-   * @param tagId 标签id
-   */
-  void tagDelete(String tagId) throws WxErrorException;
-
-  /**
-   * 获得标签列表
-   */
-  List<WxCpTag> tagGet() throws WxErrorException;
-
-  /**
-   * 获取标签成员
-   *
-   * @param tagId 标签ID
-   */
-  List<WxCpUser> tagGetUsers(String tagId) throws WxErrorException;
-
-  /**
-   * 增加标签成员
-   *
-   * @param tagId   标签id
-   * @param userIds 用户ID 列表
-   */
-  void tagAddUsers(String tagId, List<String> userIds, List<String> partyIds) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 构造oauth2授权的url连接
-   * </pre>
-   *
-   * @param state 状态码
-   * @return url
-   */
-  String oauth2buildAuthorizationUrl(String state);
-
-  /**
-   * <pre>
-   * 构造oauth2授权的url连接
-   * 详情请见: http://qydev.weixin.qq.com/wiki/index.php?title=企业获取code
-   * </pre>
-   *
-   * @param redirectUri 跳转链接地址
-   * @param state       状态码
-   * @return url
-   */
-  String oauth2buildAuthorizationUrl(String redirectUri, String state);
-
-  /**
-   * <pre>
-   * 用oauth2获取用户信息
-   * http://qydev.weixin.qq.com/wiki/index.php?title=根据code获取成员信息
-   * 因为企业号oauth2.0必须在应用设置里设置通过ICP备案的可信域名，所以无法测试，因此这个方法很可能是坏的。
-   *
-   * 注意: 这个方法使用WxCpConfigStorage里的agentId
-   * </pre>
-   *
-   * @param code 微信oauth授权返回的代码
-   * @return [userid, deviceid]
-   * @see #oauth2getUserInfo(Integer, String)
-   */
-  String[] oauth2getUserInfo(String code) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 用oauth2获取用户信息
-   * http://qydev.weixin.qq.com/wiki/index.php?title=根据code获取成员信息
-   * 因为企业号oauth2.0必须在应用设置里设置通过ICP备案的可信域名，所以无法测试，因此这个方法很可能是坏的。
-   *
-   * 注意: 这个方法不使用WxCpConfigStorage里的agentId，需要开发人员自己给出
-   * </pre>
-   *
-   * @param agentId 企业号应用的id
-   * @param code    微信oauth授权返回的代码
-   * @return [userid, deviceid]
-   * @see #oauth2getUserInfo(String)
-   */
-  String[] oauth2getUserInfo(Integer agentId, String code) throws WxErrorException;
-
-
-  /**
-   * 移除标签成员
-   *
-   * @param tagId   标签id
-   * @param userIds 用户id列表
-   */
-  void tagRemoveUsers(String tagId, List<String> userIds) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 邀请成员关注
-   * http://qydev.weixin.qq.com/wiki/index.php?title=管理成员#.E9.82.80.E8.AF.B7.E6.88.90.E5.91.98.E5.85.B3.E6.B3.A8
-   * </pre>
-   *
-   * @param userId     用户的userid
-   * @param inviteTips 推送到微信上的提示语（只有认证号可以使用）。当使用微信推送时，该字段默认为“请关注XXX企业号”，邮件邀请时，该字段无效。
-   * @return 1:微信邀请 2.邮件邀请
-   */
-  int invite(String userId, String inviteTips) throws WxErrorException;
-
-  /**
-   * <pre>
-   * 获取微信服务器的ip段
+   * 获取企业微信回调IP段
    * http://qydev.weixin.qq.com/wiki/index.php?title=回调模式#.E8.8E.B7.E5.8F.96.E5.BE.AE.E4.BF.A1.E6.9C.8D.E5.8A.A1.E5.99.A8.E7.9A.84ip.E6.AE.B5
    * </pre>
    *
    * @return { "ip_list": ["101.226.103.*", "101.226.62.*"] }
+   * @throws WxErrorException the wx error exception
    */
   String[] getCallbackIp() throws WxErrorException;
 
   /**
-   * 当本Service没有实现某个API的时候，可以用这个，针对所有微信API中的GET请求
+   * <pre>
+   * 获取企业微信接口IP段
+   * https://developer.work.weixin.qq.com/document/path/92520
+   * </pre>
    *
-   * @param url        接口地址
-   * @param queryParam 请求参数
+   * @return 企业微信接口IP段
+   * @throws WxErrorException the wx error exception
    */
-  String get(String url, String queryParam) throws WxErrorException;
+  String[] getApiDomainIp() throws WxErrorException;
 
   /**
-   * 当本Service没有实现某个API的时候，可以用这个，针对所有微信API中的POST请求
+   * <pre>
+   * 获取服务商凭证
+   * 文档地址：https://work.weixin.qq.com/api/doc#90001/90143/91200
+   * 请求方式：POST（HTTPS）
+   * 请求地址： https://qyapi.weixin.qq.com/cgi-bin/service/get_provider_token
+   * </pre>
+   *
+   * @param corpId         服务商的corpid
+   * @param providerSecret 服务商的secret，在服务商管理后台可见
+   * @return { "errcode":0 , "errmsg":"ok" , "provider_access_token":"enLSZ5xxxxxxJRL", "expires_in":7200 }
+   * @throws WxErrorException .
+   */
+  WxCpProviderToken getProviderToken(String corpId, String providerSecret) throws WxErrorException;
+
+  /**
+   * 当不需要自动带accessToken的时候，可以用这个发起post请求
    *
    * @param url      接口地址
    * @param postData 请求body字符串
+   * @return the string
+   * @throws WxErrorException the wx error exception
    */
-  String post(String url, String postData) throws WxErrorException;
+  String postWithoutToken(String url, String postData) throws WxErrorException;
+
+  /**
+   * <pre>
+   * 使用会话存档access token发起post请求
+   * 会话存档相关API需要使用会话存档专用的secret获取独立的access token
+   * </pre>
+   *
+   * @param url      接口地址
+   * @param postData 请求body字符串
+   * @return the string
+   * @throws WxErrorException the wx error exception
+   */
+  String postForMsgAudit(String url, String postData) throws WxErrorException;
+
+  /**
+   * <pre>
+   * 使用通讯录同步access token发起get请求
+   * 通讯录同步相关API需要使用通讯录同步专用的secret获取独立的access token
+   * </pre>
+   *
+   * @param url        接口地址
+   * @param queryParam 请求参数
+   * @return the string
+   * @throws WxErrorException the wx error exception
+   */
+  String getForContact(String url, String queryParam) throws WxErrorException;
+
+  /**
+   * <pre>
+   * 使用通讯录同步access token发起post请求
+   * 通讯录同步相关API需要使用通讯录同步专用的secret获取独立的access token
+   * </pre>
+   *
+   * @param url      接口地址
+   * @param postData 请求body字符串
+   * @return the string
+   * @throws WxErrorException the wx error exception
+   */
+  String postForContact(String url, String postData) throws WxErrorException;
 
   /**
    * <pre>
    * Service没有实现某个API的时候，可以用这个，
    * 比{@link #get}和{@link #post}方法更灵活，可以自己构造RequestExecutor用来处理不同的参数和不同的返回类型。
-   * 可以参考，{@link me.chanjar.weixin.common.util.http.MediaUploadRequestExecutor}的实现方法
+   * 可以参考，{@link MediaUploadRequestExecutor}的实现方法
    * </pre>
    *
+   * @param <T>      请求值类型
+   * @param <E>      返回值类型
    * @param executor 执行器
    * @param uri      请求地址
    * @param data     参数
-   * @param <T>      请求值类型
-   * @param <E>      返回值类型
+   * @return the t
+   * @throws WxErrorException the wx error exception
    */
   <T, E> T execute(RequestExecutor<T, E> executor, String uri, E data) throws WxErrorException;
-
-  /**
-   * 注入 {@link WxCpConfigStorage} 的实现
-   *
-   * @param wxConfigProvider 配置对象
-   */
-  void setWxCpConfigStorage(WxCpConfigStorage wxConfigProvider);
 
   /**
    * <pre>
@@ -511,6 +300,7 @@ public interface WxCpService {
    * 获取某个sessionId对应的session,如果sessionId没有对应的session，则新建一个并返回。
    *
    * @param id id可以为任意字符串，建议使用FromUserName作为id
+   * @return the session
    */
   WxSession getSession(String id);
 
@@ -519,8 +309,16 @@ public interface WxCpService {
    *
    * @param id     id可以为任意字符串，建议使用FromUserName作为id
    * @param create 是否新建
+   * @return the session
    */
   WxSession getSession(String id, boolean create);
+
+  /**
+   * 获取WxSessionManager 对象
+   *
+   * @return WxSessionManager session manager
+   */
+  WxSessionManager getSessionManager();
 
   /**
    * <pre>
@@ -536,18 +334,350 @@ public interface WxCpService {
    * 上传部门列表覆盖企业号上的部门信息
    *
    * @param mediaId 媒体id
+   * @return the string
+   * @throws WxErrorException the wx error exception
    */
   String replaceParty(String mediaId) throws WxErrorException;
+
+  /**
+   * 上传用户列表，增量更新成员
+   *
+   * @param mediaId 媒体id
+   * @return jobId 异步任务id
+   * @throws WxErrorException the wx error exception
+   */
+  String syncUser(String mediaId) throws WxErrorException;
 
   /**
    * 上传用户列表覆盖企业号上的用户信息
    *
    * @param mediaId 媒体id
+   * @return the string
+   * @throws WxErrorException the wx error exception
    */
   String replaceUser(String mediaId) throws WxErrorException;
 
   /**
    * 获取异步任务结果
+   *
+   * @param jobId 异步任务id
+   * @return the task result
+   * @throws WxErrorException the wx error exception
    */
-  String getTaskResult(String joinId) throws WxErrorException;
+  String getTaskResult(String jobId) throws WxErrorException;
+
+  /**
+   * 初始化http请求对象
+   */
+  void initHttp();
+
+  /**
+   * 获取WxCpConfigStorage 对象
+   *
+   * @return WxCpConfigStorage wx cp config storage
+   */
+  WxCpConfigStorage getWxCpConfigStorage();
+
+  /**
+   * 注入 {@link WxCpConfigStorage} 的实现
+   *
+   * @param wxConfigProvider 配置对象
+   */
+  void setWxCpConfigStorage(WxCpConfigStorage wxConfigProvider);
+
+  /**
+   * 构造扫码登录链接 - 构造独立窗口登录二维码
+   *
+   * @param redirectUri 重定向地址，需要进行UrlEncode
+   * @param state       用于保持请求和回调的状态，授权请求后原样带回给企业。该参数可用于防止csrf攻击（跨站请求伪造攻击），建议企业带上该参数，可设置为简单的随机数加session进行校验
+   * @return . string
+   */
+  String buildQrConnectUrl(String redirectUri, String state);
+
+  /**
+   * 获取部门相关接口的服务类对象
+   *
+   * @return the department service
+   */
+  WxCpDepartmentService getDepartmentService();
+
+  /**
+   * 获取媒体相关接口的服务类对象
+   *
+   * @return the media service
+   */
+  WxCpMediaService getMediaService();
+
+  /**
+   * 获取菜单相关接口的服务类对象
+   *
+   * @return the menu service
+   */
+  WxCpMenuService getMenuService();
+
+  /**
+   * 获取Oauth2相关接口的服务类对象
+   *
+   * @return the oauth 2 service
+   */
+  WxCpOAuth2Service getOauth2Service();
+
+  /**
+   * 获取标签相关接口的服务类对象
+   *
+   * @return the tag service
+   */
+  WxCpTagService getTagService();
+
+  /**
+   * 获取用户相关接口的服务类对象
+   *
+   * @return the user service
+   */
+  WxCpUserService getUserService();
+
+  /**
+   * Gets external contact service.
+   *
+   * @return the external contact service
+   */
+  WxCpExternalContactService getExternalContactService();
+
+  /**
+   * 获取群聊服务
+   *
+   * @return 群聊服务 chat service
+   */
+  WxCpChatService getChatService();
+
+  /**
+   * 获取任务卡片服务
+   *
+   * @return 任务卡片服务 task card service
+   */
+  WxCpTaskCardService getTaskCardService();
+
+  /**
+   * Gets agent service.
+   *
+   * @return the agent service
+   */
+  WxCpAgentService getAgentService();
+
+  /**
+   * Gets message service.
+   *
+   * @return the message service
+   */
+  WxCpMessageService getMessageService();
+
+  /**
+   * 获取OA相关接口的服务类对象.
+   *
+   * @return the oa service
+   */
+  WxCpOaService getOaService();
+
+  /**
+   * 获取家校应用复学码相关接口的服务类对象
+   *
+   * @return school service
+   */
+  WxCpSchoolService getSchoolService();
+
+  /**
+   * 获取家校沟通相关接口的服务类对象
+   *
+   * @return school user service
+   */
+  WxCpSchoolUserService getSchoolUserService();
+
+  /**
+   * 获取家校应用健康上报的服务类对象
+   *
+   * @return school health service
+   */
+  WxCpSchoolHealthService getSchoolHealthService();
+
+  /**
+   * 获取直播相关接口的服务类对象
+   *
+   * @return the Living service
+   */
+  WxCpLivingService getLivingService();
+
+  /**
+   * 获取OA 自建应用相关接口的服务类对象
+   *
+   * @return oa agent service
+   */
+  WxCpOaAgentService getOaAgentService();
+
+  /**
+   * 获取OA效率工具 微盘的服务类对象
+   *
+   * @return oa we drive service
+   */
+  WxCpOaWeDriveService getOaWeDriveService();
+
+  /**
+   * 获取OA效率工具 文档的服务类对象
+   *
+   * @return oa we doc service
+   */
+  WxCpOaWeDocService getOaWeDocService();
+
+  /**
+   * 获取会话存档相关接口的服务类对象
+   *
+   * @return msg audit service
+   */
+  WxCpMsgAuditService getMsgAuditService();
+
+  /**
+   * 获取日历相关接口的服务类对象
+   *
+   * @return the oa calendar service
+   */
+  WxCpOaCalendarService getOaCalendarService();
+
+  /**
+   * 获取会议室相关接口的服务类对象
+   *
+   * @return the oa meetingroom service
+   */
+  WxCpOaMeetingRoomService getOaMeetingRoomService();
+
+  /**
+   * 获取日程相关接口的服务类对象
+   *
+   * @return the oa schedule service
+   */
+  WxCpOaScheduleService getOaScheduleService();
+
+  /**
+   * 获取群机器人消息推送服务
+   *
+   * @return 群机器人消息推送服务 group robot service
+   */
+  WxCpGroupRobotService getGroupRobotService();
+
+  /**
+   * 获取工作台服务
+   *
+   * @return the workbench service
+   */
+  WxCpAgentWorkBenchService getWorkBenchService();
+
+  /**
+   * 获取微信客服服务
+   *
+   * @return 微信客服服务 kf service
+   */
+  WxCpKfService getKfService();
+
+  /**
+   * http请求对象
+   *
+   * @return the request http
+   */
+  RequestHttp<?, ?> getRequestHttp();
+
+  /**
+   * Sets user service.
+   *
+   * @param userService the user service
+   */
+  void setUserService(WxCpUserService userService);
+
+  /**
+   * Sets department service.
+   *
+   * @param departmentService the department service
+   */
+  void setDepartmentService(WxCpDepartmentService departmentService);
+
+  /**
+   * Sets media service.
+   *
+   * @param mediaService the media service
+   */
+  void setMediaService(WxCpMediaService mediaService);
+
+  /**
+   * Sets menu service.
+   *
+   * @param menuService the menu service
+   */
+  void setMenuService(WxCpMenuService menuService);
+
+  /**
+   * Sets oauth 2 service.
+   *
+   * @param oauth2Service the oauth 2 service
+   */
+  void setOauth2Service(WxCpOAuth2Service oauth2Service);
+
+  /**
+   * Sets tag service.
+   *
+   * @param tagService the tag service
+   */
+  void setTagService(WxCpTagService tagService);
+
+  /**
+   * Sets kf service.
+   *
+   * @param kfService the kf service
+   */
+  void setKfService(WxCpKfService kfService);
+
+  /**
+   * 获取异步导出服务
+   *
+   * @return 异步导出服务 export service
+   */
+  WxCpExportService getExportService();
+
+  /**
+   * 设置异步导出服务
+   *
+   * @param exportService 异步导出服务
+   */
+  void setExportService(WxCpExportService exportService);
+
+  /**
+   * 相关接口的服务类对象
+   *
+   * @return the meeting service
+   */
+  WxCpMeetingService getMeetingService();
+
+  /**
+   * 企业互联的服务类对象
+   *
+   * @return 企业互联服务对象
+   */
+  WxCpCorpGroupService getCorpGroupService();
+
+  /**
+   * 获取智能机器人服务
+   *
+   * @return 智能机器人服务 intelligent robot service
+   */
+  WxCpIntelligentRobotService getIntelligentRobotService();
+
+  /**
+   * 获取人事助手服务
+   *
+   * @return 人事助手服务 hr service
+   */
+  WxCpHrService getHrService();
+
+  /**
+   * 获取待办服务
+   *
+   * @return 待办服务 todo service
+   */
+  WxCpTodoService getTodoService();
 }

@@ -1,10 +1,12 @@
 package me.chanjar.weixin.mp.api;
 
-import me.chanjar.weixin.common.bean.result.WxError;
-import me.chanjar.weixin.common.exception.WxErrorException;
+import lombok.extern.slf4j.Slf4j;
+import me.chanjar.weixin.common.error.WxErrorException;
+import me.chanjar.weixin.common.error.WxRuntimeException;
 import me.chanjar.weixin.common.util.http.RequestExecutor;
-import me.chanjar.weixin.mp.api.impl.WxMpServiceImpl;
-import org.testng.annotations.*;
+import me.chanjar.weixin.mp.api.impl.WxMpServiceHttpClientImpl;
+import org.testng.annotations.DataProvider;
+import org.testng.annotations.Test;
 
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -12,49 +14,46 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 @Test
+@Slf4j
 public class WxMpBusyRetryTest {
 
   @DataProvider(name = "getService")
   public Object[][] getService() {
-    WxMpService service = new WxMpServiceImpl() {
+    WxMpService service = new WxMpServiceHttpClientImpl() {
 
       @Override
-      protected synchronized <T, E> T executeInternal(
-        RequestExecutor<T, E> executor, String uri, E data)
+      public synchronized <T, E> T executeInternal(
+        RequestExecutor<T, E> executor, String uri, E data, boolean doNotAutoRefresh)
         throws WxErrorException {
-        this.log.info("Executed");
-        WxError error = new WxError();
-        error.setErrorCode(-1);
-        throw new WxErrorException(error);
+        log.info("Executed");
+        throw new WxErrorException(me.chanjar.weixin.common.error.WxError.builder()
+          .errorCode(-1).errorMsg("system busy").build());
       }
     };
 
     service.setMaxRetryTimes(3);
-    service.setRetrySleepMillis(500);
+    service.setRetrySleepMillis(1);
     return new Object[][]{{service}};
   }
 
   @Test(dataProvider = "getService", expectedExceptions = RuntimeException.class)
   public void testRetry(WxMpService service) throws WxErrorException {
-    service.execute(null, null, null);
+    service.execute(null, (String) null, null);
   }
 
   @Test(dataProvider = "getService")
   public void testRetryInThreadPool(final WxMpService service) throws InterruptedException, ExecutionException {
     // 当线程池中的线程复用的时候，还是能保证相同的重试次数
     ExecutorService executorService = Executors.newFixedThreadPool(1);
-    Runnable runnable = new Runnable() {
-      @Override
-      public void run() {
-        try {
-          System.out.println("=====================");
-          System.out.println(Thread.currentThread().getName() + ": testRetry");
-          service.execute(null, null, null);
-        } catch (WxErrorException e) {
-          throw new RuntimeException(e);
-        } catch (RuntimeException e) {
-          // OK
-        }
+    Runnable runnable = () -> {
+      try {
+        System.out.println("=====================");
+        System.out.println(Thread.currentThread().getName() + ": testRetry");
+        service.execute(null, (String) null, null);
+      } catch (WxErrorException e) {
+        throw new WxRuntimeException(e);
+      } catch (RuntimeException e) {
+        org.testng.Assert.assertTrue(e.getMessage().contains("超出重试次数"));
       }
     };
     Future<?> submit1 = executorService.submit(runnable);

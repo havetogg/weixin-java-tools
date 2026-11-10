@@ -1,24 +1,23 @@
 package me.chanjar.weixin.common.util.crypto;
 
-import org.testng.annotations.Test;
+import java.io.IOException;
+import java.io.StringReader;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+
+import org.testng.annotations.*;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import java.io.IOException;
-import java.io.StringReader;
-
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.fail;
+import static org.testng.Assert.*;
 
 @Test
 public class WxCryptUtilTest {
-  String encodingAesKey = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
+  String encodingAesKey = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFE";
   String token = "pamtest";
   String timestamp = "1409304348";
   String nonce = "xxxxxx";
@@ -40,6 +39,8 @@ public class WxCryptUtilTest {
     System.out.println(encryptedXml);
 
     DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
+    documentBuilderFactory.setExpandEntityReferences(false);
+    documentBuilderFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
     DocumentBuilder documentBuilder = documentBuilderFactory.newDocumentBuilder();
     Document document = documentBuilder.parse(new InputSource(new StringReader(encryptedXml)));
 
@@ -77,11 +78,14 @@ public class WxCryptUtilTest {
   }
 
   public void testValidateSignatureError() throws ParserConfigurationException, SAXException,
-          IOException {
+    IOException {
     try {
       WxCryptUtil pc = new WxCryptUtil(this.token, this.encodingAesKey, this.appId);
       String afterEncrpt = pc.encrypt(this.replyMsg);
       DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+      dbf.setExpandEntityReferences(false);
+      dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+
       DocumentBuilder db = dbf.newDocumentBuilder();
       StringReader sr = new StringReader(afterEncrpt);
       InputSource is = new InputSource(sr);
@@ -92,7 +96,7 @@ public class WxCryptUtilTest {
 
       String encrypt = nodelist1.item(0).getTextContent();
       String fromXML = String.format(this.xmlFormat, encrypt);
-      pc.decrypt("12345", this.timestamp, this.nonce, fromXML); // 这里签名错误
+      pc.decryptXml("12345", this.timestamp, this.nonce, fromXML); // 这里签名错误
     } catch (RuntimeException e) {
       assertEquals(e.getMessage(), "加密消息签名校验失败");
       return;

@@ -1,8 +1,8 @@
+.bash
+.history
+
 *.class
 test-output
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
 
 # Package Files #
 *.jar
@@ -28,10 +28,6 @@ test-config.xml
 /gradlew
 **/build/
 
-# OSX
-# Icon must end with two \r
-Icon
-
 
 ._*
 .DS_Store
@@ -42,6 +38,7 @@ Icon
 .Spotlight-V100
 .TemporaryItems
 .Trashes
+.vscode
 .VolumeIcon.icns
 .AppleDB
 .AppleDesktop
@@ -50,3 +47,18 @@ Temporary Items
 .apdisk
 /.sonar/
 sonar-project.properties
+
+!/.mvn/wrapper/maven-wrapper.jar
+*.versionsBackup
+
+# Local Superpowers planning artifacts
+docs/superpowers/
+
+# STS
+.factorypath
+*.zip
+.worktrees
+# Local Superpowers working documents; do not commit.
+/docs/superpowers/
+/.firecrawl/
+.repo_memory/
